@@ -2,7 +2,31 @@
 
 **Target**: `openmrs-module-icd11`  
 **Platform**: OpenMRS Core 2.6+  
-**Purpose**: Backend for capturing WHO ICD-11 diagnoses via the Embedded Coding Tool (ECT), using on-demand stem code concepts + Obs Groups for rich data.
+**Purpose**: Backend for capturing WHO ICD-11 diagnoses via the Embedded Coding Tool (ECT), using on-demand stem code concepts + core `Diagnosis` with `DiagnosisAttribute`s for rich data.
+
+## Decisions (2026-10-29) — supersede the original text below where they conflict
+
+| # | Topic | Decision | Why |
+|---|-------|----------|-----|
+| D1 | Clinical record | Save a **core `org.openmrs.Diagnosis`** (`encounter_diagnosis`), coded to the stem concept, instead of an Obs Group. | O3 visit summary, diagnosis lists, FHIR `Condition`/`encounter-diagnosis` and reports all read core diagnoses. Obs-only diagnoses would be invisible. |
+| D2 | Rich ECT data | Stored as **`DiagnosisAttribute`s** (core 2.5+) with `FreeTextDatatype`. The attribute types are created by the activator with fixed UUIDs. No helper concepts. | Keeps everything on one row family, needs no extra concepts and stays queryable. |
+| D3 | Concept source | Look up and create mappings in the concept source **`ICD-11-WHO`** (the name CIEL uses), map type `SAME-AS`. | If CIEL is loaded, existing CIEL concepts mapped to the stem are **reused** instead of creating duplicates. |
+| D4 | Concept name | FSN = `"{title} [{stemCode}]"` (the code keeps the FSN unique), SHORT name = `stemCode`, class `Diagnosis`, datatype `N/A`. | ICD titles such as "Other specified …" are not unique, and core rejects duplicate FSNs. |
+| D5 | Privileges | The endpoint needs core `Edit Diagnoses` (POST/DELETE) / `Get Diagnoses` (GET). Concept creation runs with **proxy privileges** (`Manage Concepts`, `Manage Concept Reference Terms`, `Manage Concept Sources`). | Clinicians must not need dictionary-admin rights to record a diagnosis. |
+| D6 | Concurrency | A per-stem-code lock in the service plus a re-check inside the lock. Lookups pick the **oldest** matching concept, so a rare duplicate (multi-node, or the ms between lock release and commit) is harmless. No REQUIRES_NEW transaction. | Core has no DB unique constraint on (source, code). REQUIRES_NEW would not see uncommitted encounter or test data. |
+| D7 | Stem vs expression | `stemCode` is optional. When it is missing, it is derived as the first stem of `fullExpression` (split on `&` and `/`). If both are sent, the stem must be the prefix of the expression. Stem-code *clusters* (`A/B`) are coded on the first stem; the full cluster stays in the `fullExpression` attribute. | ECT's `code` may contain post-coordination. The coded concept must be a stem. |
+| D8 | Encounter | `encounter` is optional. When it is missing, the backend creates an encounter (type from GP `icd11.encounterTypeUuid`, default *Visit Note*; location from payload `location` or the session location) and attaches it to the patient's active visit if there is one. | The O3 workspace does not always have an encounter yet. |
+| D9 | Certainty / rank | The payload carries `certainty` (`PROVISIONAL`\|`CONFIRMED`, default `PROVISIONAL`) and `rank` (1 = primary, 2 = secondary, default 1). | These are required by core `Diagnosis`. |
+| D10 | REST | A Spring controller extending `BaseRestController` at `/ws/rest/v1/icd11/diagnosis`: POST, GET `{uuid}`, GET `?patient=`, DELETE `{uuid}` (void). It requires the `webservices.rest` module. | Atomic single transaction (concept + encounter + diagnosis + attributes). |
+| D11 | Scaffold | SDK sample code (`Item`, DAO, `AdminList`, JSP, legacyui awareness) is removed. The repo is flattened (pom at the root). | Not used. |
+| D12 | Build | Build with JDK 11 in Docker (`maven:3.9-eclipse-temurin-11`, `~/.m2` mounted). The host JDK (21/25) is not used for the core 2.6 test harness. | Reproducible, and works offline once `~/.m2` is warm. |
+| D14 | Input decoding | The REST controller HTML-unescapes text fields. | The `legacyui` XSSFilter shipped in O3 3.8 HTML-escapes JSON bodies (`BA20.0&XB7Q.0` became `BA20.0&amp;XB7Q.0`). Found by the E2E smoke test. |
+| D15 | Build | Parent `maven-parent-openmrs-module` **2.3.0** (the SDK template's 1.1.1 pulls JUnit 4.11, PowerMock 1.5 and `-source 6`, which are incompatible with the core 2.6 test harness). JUnit pinned to 4.13.2. Spotless files (`OpenMRSFormatter.xml`, `license-header.txt`) are at the repo root. | Tests could not run otherwise. |
+| D13 | Dev stack | `../docker-compose.yml` (workspace root) runs MariaDB + O3 3.8.0 backend (with this omod bind-mounted) + O3 frontend + WHO ICD-API + nginx gateway. Everything works offline after the first run. | Offline BE+FE testing. |
+
+> **Status (2026-10-29):** implemented. There are 36 backend tests (8 unit, 16 service integration on H2, 12 REST controller), plus `make smoke` (API E2E) and `make e2e` (Playwright, in the frontend repo). Everything was verified against O3 3.8.0 / core 2.8.10, including with no internet egress (`make offline-check`). The refapp's CIEL dictionary already maps many concepts SAME-AS `ICD-11-WHO`, and these were reused live, e.g. `1A00` → CIEL 122604 "Cholera due to Vibrio cholerae" (D3).
+>
+> Sections 2–5 below describe the original Obs Group design and are kept for reference; D1/D2 replace them.
 
 ## High-Level Architecture
 

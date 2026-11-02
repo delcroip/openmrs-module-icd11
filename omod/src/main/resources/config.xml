@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    This Source Code Form is subject to the terms of the Mozilla Public License,
+    v. 2.0. If a copy of the MPL was not distributed with this file, You can
+    obtain one at http://mozilla.org/MPL/2.0/. OpenMRS is also distributed under
+    the terms of the Healthcare Disclaimer located at http://openmrs.org/license.
+
+    Copyright (C) OpenMRS Inc. OpenMRS is a registered trademark and the OpenMRS
+    graphic logo is a trademark of OpenMRS Inc.
+
+-->
+
+<module configVersion="1.2">
+	
+	<!-- Base Module Properties -->
+	<id>${project.parent.artifactId}</id>
+	<name>${project.parent.name}</name>
+	<version>${project.parent.version}</version>
+	<package>org.openmrs.module.icd11</package>
+	<author>Patrick Delcroix</author>
+	<description>
+			${project.parent.description}
+	</description>
+
+	<activator>org.openmrs.module.icd11.ICD11DiagnosisActivator</activator>
+	
+	<!-- <updateURL>https://modules.openmrs.org/modules/download/@MODULE_ID@/update.rdf</updateURL> -->
+	<!-- /Base Module Properties -->
+	
+	<require_version>2.6</require_version>
+	
+	<require_modules>
+		<require_module version="2.40.0">org.openmrs.module.webservices.rest</require_module>
+	</require_modules>
+
+	<globalProperty>
+		<property>icd11.encounterTypeUuid</property>
+		<defaultValue>d7151f82-c1f3-4152-a605-2f9ea7414a79</defaultValue>
+		<description>
+			UUID of the encounter type used when an ICD-11 diagnosis is saved without an encounter
+			(default: O3 "Visit Note").
+		</description>
+	</globalProperty>
+
+	<!-- Internationalization -->
+	<!-- All message codes should start with @MODULE_ID@.* -->
+	<messages>
+		<lang>en</lang>
+		<file>messages.properties</file>
+	</messages>
+	<messages>
+		<lang>fr</lang>
+		<file>messages_fr.properties</file>
+	</messages>
+	<messages>
+		<lang>es</lang>
+		<file>messages_es.properties</file>
+	</messages>
+	<!-- /Internationalization -->
+	
+</module>
+
